@@ -4,7 +4,38 @@ import torch.nn.functional as F
 
 import layers.hilbert_sphere as sphere_ops
 
-class IntraVoxelConv(nn.Module):
+import MVC
+import time
+
+class MVC_function(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, weights):
+        output_log = MVC.log_forward(input, weights)
+        output_exp = MVC.exp_forward(output_log, input)
+        variables = [input, output_log, weights]
+        ctx.save_for_backward(*variables)
+        return output_exp
+
+    @staticmethod
+    def backward(ctx, grad_exp):
+        input, output_log, weights = ctx.saved_tensors
+        grad_log, grad_M = MVC.exp_backward(output_log, input, grad_exp.contiguous())
+        grad_x = MVC.log_backward(input, weights, grad_log)
+        grad_weights = MVC.log_weights_backward(input, weights, grad_log)
+        return grad_x+grad_M, grad_weights
+
+
+MVC_apply = MVC_function.apply
+class IntraVoxelConv(torch.nn.Module):
+    def __init__(self, input_channels, output_channels, kernel_size=3):
+        super().__init__()
+        self.weight_mask = torch.nn.Parameter(torch.rand([output_channels, kernel_size, kernel_size, kernel_size, input_channels], requires_grad=True))
+    
+    def forward(self, x):
+        return MVC_apply(x, self.weight_mask)
+
+
+class IntraVoxelConvTorch(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, zero_init=False):
         super().__init__()
         self.in_channels = in_channels
@@ -48,7 +79,6 @@ class IntraVoxelConv(nn.Module):
         x_s = x_windows.shape
         # x_windows: [batches, rows_reduced, cols_reduced, depth_reduced, window*channels, N]
         x_windows = x_windows.view(x_s[0], x_s[1], x_s[2], x_s[3], -1, x_s[6]).contiguous()
-
         return sphere_ops.tangentCombination(x_windows, self.weight_matrix)
 
 def interpolator(x, target_size):
@@ -67,9 +97,9 @@ def interpolator(x, target_size):
         return x
 
 class IntraConvUpsample(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, zero_init=False, target_size=None):
+    def __init__(self, in_channels, out_channels, kernel_size, target_size=None):
         super().__init__()
-        self.conv = IntraVoxelConv(in_channels, out_channels, kernel_size, stride, zero_init)
+        self.conv = IntraVoxelConv(in_channels, out_channels, kernel_size)
         self.target_size = target_size
 
     def forward(self, x):

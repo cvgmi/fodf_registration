@@ -24,6 +24,7 @@ class Trainer:
                  testing_dataset,
                  lr,
                  batch_size,
+                 affine,
                  device):
 
         self.device = device
@@ -42,6 +43,8 @@ class Trainer:
                                                            batch_size=1,
                                                            shuffle=True,
                                                            num_workers=0)
+        self.affine = affine
+
     def get_model(self):
         return self.model
 
@@ -50,8 +53,13 @@ class Trainer:
         self.model.train()
         iterator = tqdm(self.train_dataloader) if print_status else self.train_dataloader
         for sample in iterator:
+            if self.affine:
+                sample = sample[0]
+                affine_gt = sample[1]
+
             self.optimizer.zero_grad()
             sample = sample.to(self.device)
+            sample = torch.zeros([1, 2, 64, 64, 64, 45]).float().to(self.device)
             warped, affine = self.model(sample)
             loss = self.loss(warped, sample[:,1])
 
@@ -70,6 +78,7 @@ class Trainer:
         with torch.no_grad():
             self.model.eval()
             for sample in iterator:
+
                 sample = sample.to(self.device)
                 warped, affine = self.model(sample)
                 loss_value = self.loss(warped, sample[:, 1])
@@ -87,6 +96,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             for id, sample in enumerate(self.test_dataloader):
+
                 sample = sample.to(self.device)
                 warped, affine = self.model(sample)
                 warped = warped[0].cpu().detach().numpy()

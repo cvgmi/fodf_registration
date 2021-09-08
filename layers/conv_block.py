@@ -6,7 +6,6 @@ class ConvBlock3D(nn.Module):
         super().__init__()
         self.conv = nn.Conv3d(in_channels, out_channels, **kwargs)
         self.relu = nn.ReLU()
-        self.bn = nn.BatchNorm3d(out_channels)
 
     def forward(self, x):
-        return self.bn(self.relu(self.conv(x)))
+        return self.relu(self.conv(x))

@@ -1,7 +1,7 @@
 from trainer import *
 
 from dataset import DiffusionDataset, atlas_dataset
-from model import BasicAffineUNetLog, BasicAffineUNetGeodesic, BasicAffineUNetNoMVC
+from model import BasicAffineUNet, BasicAffineUNetGeodesic, BasicAffineUNetNoMVC
 
 import nibabel as nib
 
@@ -10,19 +10,21 @@ import logging
 import sys
 
 project_name = datetime.now().strftime("reorient_%m-%d-%Y_%H-%M-%S")
-#logging.basicConfig(filename='{}.log'.format(project_name), level=logging.DEBUG)
+#logging.basicConfig(filenafme='{}.log'.format(project_name), level=logging.DEBUG)
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
 
 if __name__ == "__main__":
     dataset = atlas_dataset(DiffusionDataset, \
                             '/blue/vemuri/josebouza/data/HCP/data_affinepre_torch/moving/patch.nii',\
+                            False,\
                             base_dir='/blue/vemuri/josebouza/data/HCP/data_affinepre_torch/fixed',\
                             tissue_name='patch.nii')
+                            #affine_name='affine.txt')
 
     training_data, test_data = random_split(dataset, [294, 6])
 
-    model_instance = BasicAffineUNetLog()
+    model_instance = BasicAffineUNet()
     logging.info(model_instance)
     trainer = Trainer(model_instance, 
                       nn.MSELoss(),
@@ -30,6 +32,7 @@ if __name__ == "__main__":
                       test_data,
                       0.0005,
                       6,
+                      False,
                       'cuda:0')
 
     for epoch in range(5000):

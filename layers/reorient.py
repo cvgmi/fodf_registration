@@ -30,7 +30,7 @@ def generate_PSF_vectors(n_pts, device):
 
 def spherical_harmonics_tournier(xyz, order):
     yzx = xyz[..., [1,2,0]]
-    sh_raw = spherical_harmonics(order, yzx, False)
+    sh_raw = spherical_harmonics(order, yzx, True)
 
     # normalize correctly :
     # even entries: 1
@@ -85,23 +85,29 @@ class FODFReorientation(nn.Module):
         _M_p = torch.pinverse(PSF2M(self.psf_vectors[None], self.lmax)).float()
         self.register_buffer('M_p', _M_p)
         
-    def forward(self, image, affine):
+    def forward(self, image, affine, modulate=True):
         # image: [B,W, H, D, N]
         # affine: [B,3,3]
         image_s = image.shape
         image = image.reshape(image_s[0], -1, image_s[-1]).permute(0,2,1)
-        affine_no_scale = affine/(torch.det(affine)[:, None, None])
-        affine_inv = torch.inverse(affine_no_scale)
+        affine_inv = torch.inverse(affine)
         w = torch.matmul(self.M_p, image)
         vi = self.psf_vectors.permute(1,0)
         vi_hat = torch.matmul(affine_inv, vi)
         vi_hat = vi_hat.permute(0,2,1)
         M_prime = PSF2M(vi_hat, self.lmax)
+        # TEMP
         if (M_prime != M_prime).any():
             logging.warning("M_PRIME")
             logging.warning(affine_inv)
             logging.warning(affine)
-        reoriented = torch.matmul(M_prime, w)
+
+        if modulate:
+            modulation_factors = torch.norm(torch.matmul(affine_inv, vi), dim=1)/torch.det(affine_inv)[:,None]
+            w_modulated = modulation_factors[...,None]*w
+        else:
+            w_modulated = w
+        reoriented = torch.matmul(M_prime, w_modulated)
         reoriented = reoriented.permute(0,2,1).reshape(*image_s)
         return reoriented
 

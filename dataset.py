@@ -3,6 +3,8 @@ from torch.utils.data import Dataset
 
 import nibabel as nib
 
+import numpy as np
+
 import os
 import logging
 
@@ -17,9 +19,10 @@ class DiffusionDataset(Dataset):
     Load our processed HCP dataset.
     Samples are loaded onto a "common" grid so that all output tensors are of the same size and with aligned metadata.
     """
-    def __init__(self, base_dir, tissue_name='wm_prealigned.nii'):
+    def __init__(self, base_dir, tissue_name='wm_prealigned.nii', affine_name=None):
         self.subject_ids = [os.path.join(base_dir, subject) for subject in os.listdir(base_dir)]
         self.tissue_name = tissue_name
+        self.affine_name = affine_name
         logging.info("HCPDataset: Found {} subjects in base directory {}.".format(len(self.subject_ids), base_dir))
 
     def __len__(self):
@@ -28,7 +31,12 @@ class DiffusionDataset(Dataset):
     def __getitem__(self, index):
         subject_id = self.subject_ids[index]
         subject_file = os.path.join(subject_id, self.tissue_name)
-        return load_subject(subject_file)
+        if self.affine_name is not None:
+            affine_file = np.loadtxt(os.path.join(subject_id, self.affine_name))
+            return load_subject(subject_file), affine_file
+
+        else:
+            return load_subject(subject_file)
 
 def pairs_dataset(dataset_class, *args, **kwargs):
     """
@@ -51,7 +59,7 @@ def pairs_dataset(dataset_class, *args, **kwargs):
             return sample
     return PairsDataset()
 
-def atlas_dataset(dataset_class, atlas_fname, *args, **kwargs):
+def atlas_dataset(dataset_class, atlas_fname, affine, *args, **kwargs):
     class AtlasDataset(Dataset):
         def __init__(self):
             self.d1 = dataset_class(*args, **kwargs)
@@ -61,8 +69,15 @@ def atlas_dataset(dataset_class, atlas_fname, *args, **kwargs):
             return len(self.d1)
         
         def __getitem__(self, index):
-            sample = torch.stack((self.atlas, self.d1[index]), dim=0)
-            return sample
+            if affine:
+                affine_gt = self.d1[index][1]
+                sample = torch.stack((self.atlas, self.d1[index][0]), dim=0)
+                return sample, affine_gt
+
+            else:
+                sample = torch.stack((self.atlas, self.d1[index]), dim=0)
+                return sample
+
     return AtlasDataset()
 
 class SingleSampleDataset(Dataset):
